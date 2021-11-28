@@ -99,6 +99,11 @@ export default class ArbBot {
         return utils.formatUnits(balance, decimals);
     }
 
+    /**
+     * Gets ethers.BigNumber balance for ERC20 token
+     * @param token {TokenMetadata}
+     * @returns BigNumber Balance
+     */
     async getTokenBalanceInBN(token: TokenMetadata): Promise<BigNumber> {
         const balance = await token.contract.balanceOf(this.wallet.address);
         return BigNumber.from(balance);
@@ -121,6 +126,10 @@ export default class ArbBot {
         `)
     }
 
+    /**
+     * Prints transaction hash / blocknumber
+     * @param tx
+     */
     async printTxDetails(tx) {
         console.log(`Transaction hash: ${tx.hash}`);
         const receipt = await tx.wait();
@@ -185,6 +194,13 @@ export default class ArbBot {
         await this.printAccountBalance();
     }
 
+    /**
+     * Approves ERC-20 for trade w/ DEX contract
+     * @param srcTokenContract {Contract} ERC-20 contract
+     * @param srcQty {BigNumber} quantity to be approved
+     * @param dexAddress {string} dex contract address
+     * @returns 
+     */
     async checkAndApproveTokenForTrade(
         srcTokenContract: Contract,
         srcQty: BigNumber,
@@ -212,6 +228,12 @@ export default class ArbBot {
         return;
     }
 
+    /**
+     * Performs ARB swap on DEX (sushi/uni)
+     * @param tokenA {TokenMetadata} 
+     * @param tokenB {TokenMetadata} 
+     * @param dexContract {Contract} Dex Contract object
+     */
     async swap(
         tokenA: TokenMetadata, 
         tokenB: TokenMetadata, 
@@ -241,6 +263,11 @@ export default class ArbBot {
         await this.printAccountBalance();
     }
 
+    /**
+     * Searches for profitable arbitrages across sushi / uni
+     * @param tokenA {TokenMetadata}
+     * @param tokenB {TokenMetadata}
+     */
     async searchProfitableArbitrage(tokenA: TokenMetadata, tokenB: TokenMetadata): Promise<void> {
         const tradeAmount = BigNumber.from("1000000000000000000");
         const uniRates1 = await this.UniContract.getAmountsOut(tradeAmount, tokenA.address, tokenB.address);
@@ -289,14 +316,9 @@ export default class ArbBot {
 
 
     /**
-     * 
-     * @param isMonitoringPrice 
-     * @param isInitialTxDone 
-     * @param tokenA 
-     * @returns 
+     * Master function to monitor price and perform swap on proftitable arbs
      */
-    async monitorPrice(
-    ): Promise<void> {
+    async monitorPrice(): Promise<void> {
         let isMonitoringPrice = false; 
         let isInitialTxDone = false;
         if(isMonitoringPrice) {
