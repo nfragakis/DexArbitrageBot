@@ -23,7 +23,8 @@ import {
     Percent,
     Route,
     Trade,
-    TokenAmount
+    TokenAmount,
+    BigintIsh
 } from "@uniswap/sdk"
 
 import { TokenMetadata, TradeParams } from "./utils/types";
@@ -135,14 +136,14 @@ export default class ArbBot {
     async constructTradeParameters(
         tokenA: Token, 
         tokenB: Token, 
-        tokenAmount: string
+        tokenAmount: BigNumber
     ): Promise<TradeParams> {
         const slippageTolerance = new Percent('50', '100');
         const pair = await Fetcher.fetchPairData(tokenA, tokenB);
         const route = new Route([pair], tokenA);
         const trade = new Trade(
             route,
-            new TokenAmount(tokenA, tokenAmount),
+            new TokenAmount(tokenA, tokenAmount.toHexString()),
             TradeType.EXACT_INPUT,
         );
 
@@ -161,7 +162,7 @@ export default class ArbBot {
      * @param dexContract {Contract} DEX performing swap
      */
     async swapEthToToken(
-        ethAmount: string, 
+        ethAmount: BigNumber, 
         swapFor: TokenMetadata, 
         dexContract: Contract
     ): Promise<void> {
@@ -264,8 +265,8 @@ export default class ArbBot {
         };
         
         // todo estimate gas prices
-        const profit1 = tradeAmount * (uniswapRates.sell - sushiswapRates.buy);
-        const profit2 = tradeAmount * (sushiswapRates.sell - uniswapRates.buy);
+        const profit1 = tradeAmount.toNumber() * (uniswapRates.sell - sushiswapRates.buy);
+        const profit2 = tradeAmount.toNumber() * (sushiswapRates.sell - uniswapRates.buy);
         
         console.log(`Profit from Uniswap<>Sushiswap : ${profit1}`)
         console.log(`Profit from Sushiswap<>Uniswap : ${profit2}`)
@@ -295,11 +296,9 @@ export default class ArbBot {
      * @returns 
      */
     async monitorPrice(
-        isMonitoringPrice: boolean, 
-        isInitialTxDone: boolean,
-        tokenA: TokenMetadata,
-        tokenB: TokenMetadata
     ): Promise<void> {
+        let isMonitoringPrice = false; 
+        let isInitialTxDone = false;
         if(isMonitoringPrice) {
             return 
         }
@@ -308,11 +307,9 @@ export default class ArbBot {
             isInitialTxDone = true;
 
             // Convert 2 ETH to DAI
-            const oneEther = utils.formatUnits(
-                BigNumber.from("2000000000000000000")
-            );
+            const oneEther = BigNumber.from("2000000000000000000")
             console.log(`Swapping ${utils.formatUnits(oneEther)} to ${this.token1.name}`)
-            await this.swapEthToToken(oneEther, tokenA, this.UniContract);
+            await this.swapEthToToken(oneEther, this.token1, this.UniContract);
         }
         await this.printAccountBalance();
 
@@ -320,7 +317,7 @@ export default class ArbBot {
         isMonitoringPrice = true;
 
         try {
-            await this.searchProfitableArbitrage(tokenA, tokenB);
+            await this.searchProfitableArbitrage(this.token1, this.token2);
         } catch (error) {
             console.error(error)
             isMonitoringPrice = false 
@@ -328,7 +325,4 @@ export default class ArbBot {
         }
         isMonitoringPrice = false
     }
-
-
-
 }
