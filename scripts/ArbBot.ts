@@ -1,7 +1,9 @@
 import {
     sushiswapABI,
     uniswapABI,
-    IERC20_ABI
+    IERC20_ABI,
+    ZERO_BN,
+    ETH_ADDRESS
 } from "./utils/constants";
 
 import { 
@@ -96,6 +98,11 @@ export default class ArbBot {
         return utils.formatUnits(balance, decimals);
     }
 
+    async getTokenBalanceInBN(token: TokenMetadata): Promise<BigNumber> {
+        const balance = await token.contract.balanceOf(this.wallet.address);
+        return BigNumber.from(balance);
+    }
+
     /**
      * Prints balance of all tokens in ARB + ETH/WETH
      */
@@ -177,6 +184,109 @@ export default class ArbBot {
         await this.printAccountBalance();
     }
 
+    async checkAndApproveTokenForTrade(
+        srcTokenContract: Contract,
+        srcQty: BigNumber,
+        dexAddress: string
+    ): Promise<void> {
+        console.log(`Evaluating: approve ${srcQty} tokens for trade`);
+        if (srcTokenContract.address == ETH_ADDRESS) {
+            return;
+        }
+
+        let existingAllowance = await srcTokenContract.allowance(this.wallet.address, dexAddress);
+        console.log(`Existing allowance ${existingAllowance}`);
+
+        if (existingAllowance.eq(ZERO_BN)) {
+            console.log(`Approving contract to max allowance ${srcQty}`);
+            await srcTokenContract.approve(dexAddress, srcQty);
+        } else if (existingAllowance.lt(srcQty)) {
+            // if existing allowance is insufficient, reset to zero, then set to MAX_UINT256
+            //setting approval to 0 and then to a max is suggestible since  if the address already has an approval, 
+            //setting again to a max would bump into error
+            console.log(`Approving contract to zero, then max allowance ${srcQty}`);
+            await srcTokenContract.approve(dexAddress, ZERO_BN);
+            await srcTokenContract.approve(dexAddress, srcQty);
+        }
+        return;
+    }
+
+    async swap(
+        tokenA: TokenMetadata, 
+        tokenB: TokenMetadata, 
+        dexContract: Contract
+    ): Promise<void> {
+        const inputTokenAmount = await this.getTokenBalanceInBN(tokenA);
+        const {
+            amountOutMin,
+            amountOutMinRaw,
+            value
+        } = await this.constructTradeParameters(tokenA.token, tokenB.token, inputTokenAmount);
+
+        console.log(`Going to swap ${utils.formatUnits(inputTokenAmount, 18)} ${tokenA.name} tokens for ${amountOutMinRaw} ${tokenB.name}`);
+
+        await this.checkAndApproveTokenForTrade(tokenA.contract, inputTokenAmount, dexContract.address);
+
+        console.log("Swapping..");
+        const tx = await dexContract.swapExactTokensForTokens(
+            inputTokenAmount,
+            toHex(amountOutMinRaw),
+            [ tokenA.address, tokenB.address],
+            this.wallet.address,
+            getDeadlineAfter(20),
+            { gasLimit: 300000}
+            );
+        await this.printTxDetails(tx);
+        await this.printAccountBalance();
+    }
+
+    async searchProfitableArbitrage(tokenA: TokenMetadata, tokenB: TokenMetadata): Promise<void> {
+        const tradeAmount = BigNumber.from("1000000000000000000");
+        const uniRates1 = await this.UniContract.getAmountsOut(tradeAmount, tokenA.address, tokenB.address);
+        console.log(`Uniswap Exchange Rate: ${utils.formatUnits(uniRates1[0], 18)} ${tokenA.name} = ${utils.formatUnits(uniRates1[1], 18)} ${tokenB.name}`);
+        const uniRates2 = await this.UniContract.getAmountsOut(tradeAmount, tokenB.address, tokenA.address);
+        console.log(`Uniswap Exchange Rate: ${utils.formatUnits(uniRates2[0], 18)} ${tokenB.name} = ${utils.formatUnits(uniRates2[1], 18)} ${tokenA.name}`);
+
+        const sushiRates1 = await this.SushiContract.getAmountsOut(tradeAmount, [ tokenA.address, tokenB.address]);
+        console.log(`Sushiswap Exchange Rate: ${utils.formatUnits(sushiRates1[0], 18)} ${tokenA.name} = ${utils.formatUnits(sushiRates1[1], 18)} ${tokenB.name}`);
+        const sushiRates2 = await this.SushiContract.getAmountsOut(tradeAmount, [ tokenB.address, tokenA.address]);
+        console.log(`Sushiswap Exchange Rate: ${utils.formatUnits(sushiRates2[0], 18)} ${tokenB.name} = ${utils.formatUnits(sushiRates2[1], 18)} ${tokenA.name}`);
+        
+        const uniswapRates = {
+            buy: uniRates1[1],
+            sell: uniRates2[1]
+        };
+
+        const sushiswapRates = {
+            buy: sushiRates1[1],
+            sell: sushiRates2[1]
+            
+        };
+        
+        // todo estimate gas prices
+        const profit1 = tradeAmount * (uniswapRates.sell - sushiswapRates.buy);
+        const profit2 = tradeAmount * (sushiswapRates.sell - uniswapRates.buy);
+        
+        console.log(`Profit from Uniswap<>Sushiswap : ${profit1}`)
+        console.log(`Profit from Sushiswap<>Uniswap : ${profit2}`)
+
+        if(profit1 > 0 && profit1 > profit2) {
+
+            //Execute arb Uniswap <=> Sushiswap
+            console.log(`Arbitrage Found: Make ${profit1} : Sell ${tokenA.name} on Uniswap at ${uniswapRates.sell} and Buy ${tokenB.name} on Sushiswap at ${sushiswapRates.buy}`);
+    
+            await this.swap(tokenA, tokenB, this.UniContract);
+            await this.swap(tokenB, tokenA, this.SushiContract);
+        } else if(profit2 > 0) {
+            //Execute arb Sushiswap <=> Uniswap
+            console.log(`Arbitrage Found: Make ${profit2} : Sell ${tokenA.name} on Sushiswap at ${sushiswapRates.sell} and Buy ${tokenB.name} on Uniswap at ${uniswapRates.buy}`);
+        
+            await this.swap(tokenA, tokenB, this.SushiContract);
+            await this.swap(tokenB, tokenA, this.UniContract);
+        }
+    }
+
+
     /**
      * 
      * @param isMonitoringPrice 
@@ -187,7 +297,8 @@ export default class ArbBot {
     async monitorPrice(
         isMonitoringPrice: boolean, 
         isInitialTxDone: boolean,
-        tokenA: TokenMetadata
+        tokenA: TokenMetadata,
+        tokenB: TokenMetadata
     ): Promise<void> {
         if(isMonitoringPrice) {
             return 
@@ -196,9 +307,9 @@ export default class ArbBot {
         if (!isInitialTxDone) {
             isInitialTxDone = true;
 
-            // Convert 1 ETH to DAI
+            // Convert 2 ETH to DAI
             const oneEther = utils.formatUnits(
-                BigNumber.from("1000000000000000000")
+                BigNumber.from("2000000000000000000")
             );
             console.log(`Swapping ${utils.formatUnits(oneEther)} to ${this.token1.name}`)
             await this.swapEthToToken(oneEther, tokenA, this.UniContract);
@@ -208,6 +319,14 @@ export default class ArbBot {
         console.log("Checking ARB options...")
         isMonitoringPrice = true;
 
+        try {
+            await this.searchProfitableArbitrage(tokenA, tokenB);
+        } catch (error) {
+            console.error(error)
+            isMonitoringPrice = false 
+            return
+        }
+        isMonitoringPrice = false
     }
 
 
