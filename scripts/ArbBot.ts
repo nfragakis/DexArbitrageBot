@@ -49,6 +49,9 @@ export default class ArbBot {
     token1Contract: Contract;
     token2Contract: Contract;
 
+    isMonitoringPrice: boolean; 
+    isInitialTxDone: boolean;
+
     /**
      * Setup token contracts + RPC details
      * @param {string} rpcEndpoint for network
@@ -74,6 +77,8 @@ export default class ArbBot {
         this.rpc = new providers.JsonRpcProvider(rpcEndpoint);
         this.wallet = new Wallet(privateKey, this.rpc);
 
+        console.log(this.wallet.address);
+
         // Setup DEX/ Token details
         this.UniContract = new Contract(uniAddress, uniswapABI, this.wallet);
         this.SushiContract = new Contract(sushiAddress, sushiswapABI, this.wallet);
@@ -89,6 +94,10 @@ export default class ArbBot {
         this.token2 = token2;
         this.token2.contract = new Contract(token2.address, IERC20_ABI, this.wallet);
         this.token2.token = new Token(chainID, this.token2.address, this.token2.decimals, this.token2.name);
+
+        // set monitoring params
+        this.isMonitoringPrice = false; 
+        this.isInitialTxDone = false;
     }
 
     /**
@@ -187,7 +196,7 @@ export default class ArbBot {
         
         console.log(`Swapping ${ethAmount} ETH for ${swapFor.name}`);
         const tx = await dexContract.swapExactETHForTokens(
-            amountOutMinRaw,
+            toHex(amountOutMinRaw),
             [this.weth.address, swapFor.address],
             this.wallet.address,
             getDeadlineAfter(20),
@@ -274,9 +283,9 @@ export default class ArbBot {
      */
     async searchProfitableArbitrage(tokenA: TokenMetadata, tokenB: TokenMetadata): Promise<void> {
         const tradeAmount = BigNumber.from("1000000000000000000");
-        const uniRates1 = await this.UniContract.getAmountsOut(tradeAmount, tokenA.address, tokenB.address);
+        const uniRates1 = await this.UniContract.getAmountsOut(tradeAmount, [ tokenA.address, tokenB.address]);
         console.log(`Uniswap Exchange Rate: ${utils.formatUnits(uniRates1[0], 18)} ${tokenA.name} = ${utils.formatUnits(uniRates1[1], 18)} ${tokenB.name}`);
-        const uniRates2 = await this.UniContract.getAmountsOut(tradeAmount, tokenB.address, tokenA.address);
+        const uniRates2 = await this.UniContract.getAmountsOut(tradeAmount, [ tokenB.address, tokenA.address]);
         console.log(`Uniswap Exchange Rate: ${utils.formatUnits(uniRates2[0], 18)} ${tokenB.name} = ${utils.formatUnits(uniRates2[1], 18)} ${tokenA.name}`);
 
         const sushiRates1 = await this.SushiContract.getAmountsOut(tradeAmount, [ tokenA.address, tokenB.address]);
@@ -323,14 +332,12 @@ export default class ArbBot {
      * Master function to monitor price and perform swap on proftitable arbs
      */
     async monitorPrice(): Promise<void> {
-        let isMonitoringPrice = false; 
-        let isInitialTxDone = false;
-        if(isMonitoringPrice) {
+        if(this.isMonitoringPrice) {
             return 
         }
 
-        if (!isInitialTxDone) {
-            isInitialTxDone = true;
+        if (!this.isInitialTxDone) {
+            this.isInitialTxDone = true;
 
             // Convert 2 ETH to DAI
             const oneEther = BigNumber.from("2000000000000000000")
@@ -339,15 +346,15 @@ export default class ArbBot {
         await this.printAccountBalance();
 
         console.log("Checking ARB options...")
-        isMonitoringPrice = true;
+        this.isMonitoringPrice = true;
 
         try {
             await this.searchProfitableArbitrage(this.token1, this.token2);
         } catch (error) {
             console.error(error)
-            isMonitoringPrice = false 
+            this.isMonitoringPrice = false 
             return
         }
-        isMonitoringPrice = false
+        this.isMonitoringPrice = false
     }
 }
