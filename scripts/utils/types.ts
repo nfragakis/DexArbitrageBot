@@ -1,5 +1,6 @@
 import { Contract } from "ethers"; 
 import { CurrencyAmount, Token, JSBI} from "@uniswap/sdk";
+import { BigNumber } from "ethers";
 
 export interface TokenMetadata {
     name: string;
@@ -12,5 +13,5 @@ export interface TokenMetadata {
 export interface TradeParams {
     amountOutMin: CurrencyAmount;
     amountOutMinRaw: JSBI;
-    value: JSBI;
+    value: JSBI | string;
 }

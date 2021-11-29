@@ -78,12 +78,15 @@ export default class ArbBot {
         this.UniContract = new Contract(uniAddress, uniswapABI, this.wallet);
         this.SushiContract = new Contract(sushiAddress, sushiswapABI, this.wallet);
 
+        this.weth = weth;
         this.weth.contract = new Contract(weth.address, IERC20_ABI, this.wallet);
         this.weth.token = new Token(chainID, this.weth.address, this.weth.decimals, this.weth.name);
 
+        this.token1 = token1;
         this.token1.contract = new Contract(token1.address, IERC20_ABI, this.wallet);
         this.token1.token = new Token(chainID, this.token1.address, this.token1.decimals, this.token1.name);
 
+        this.token2 = token2;
         this.token2.contract = new Contract(token2.address, IERC20_ABI, this.wallet);
         this.token2.token = new Token(chainID, this.token2.address, this.token2.decimals, this.token2.name);
     }
@@ -145,23 +148,24 @@ export default class ArbBot {
     async constructTradeParameters(
         tokenA: Token, 
         tokenB: Token, 
-        tokenAmount: BigNumber
+        tokenAmount: string
     ): Promise<TradeParams> {
         const slippageTolerance = new Percent('50', '100');
         const pair = await Fetcher.fetchPairData(tokenA, tokenB);
         const route = new Route([pair], tokenA);
         const trade = new Trade(
             route,
-            new TokenAmount(tokenA, tokenAmount.toHexString()),
+            new TokenAmount(tokenA, tokenAmount),
             TradeType.EXACT_INPUT,
         );
 
         const minimumAmountOut = trade.minimumAmountOut(slippageTolerance);
-        
+        console.log(`minimumAmountOut is ${minimumAmountOut.raw}`);
+    
         return {
             amountOutMin: minimumAmountOut,
             amountOutMinRaw: minimumAmountOut.raw, 
-            value: trade.inputAmount.raw,
+            value: toHex(trade.inputAmount.raw)
         };
     }
     /**
@@ -179,11 +183,11 @@ export default class ArbBot {
             amountOutMin,
             amountOutMinRaw,
             value
-        } = await this.constructTradeParameters(this.weth.token, swapFor.token, ethAmount);
-
+        } = await this.constructTradeParameters(this.weth.token, swapFor.token, String(ethAmount));
+        
         console.log(`Swapping ${ethAmount} ETH for ${swapFor.name}`);
-        const tx = await dexContract.swapExactEthForTokens(
-            toHex(amountOutMinRaw),
+        const tx = await dexContract.swapExactETHForTokens(
+            amountOutMinRaw,
             [this.weth.address, swapFor.address],
             this.wallet.address,
             getDeadlineAfter(20),
@@ -244,7 +248,7 @@ export default class ArbBot {
             amountOutMin,
             amountOutMinRaw,
             value
-        } = await this.constructTradeParameters(tokenA.token, tokenB.token, inputTokenAmount);
+        } = await this.constructTradeParameters(tokenA.token, tokenB.token, String(inputTokenAmount));
 
         console.log(`Going to swap ${utils.formatUnits(inputTokenAmount, 18)} ${tokenA.name} tokens for ${amountOutMinRaw} ${tokenB.name}`);
 
@@ -330,7 +334,6 @@ export default class ArbBot {
 
             // Convert 2 ETH to DAI
             const oneEther = BigNumber.from("2000000000000000000")
-            console.log(`Swapping ${utils.formatUnits(oneEther)} to ${this.token1.name}`)
             await this.swapEthToToken(oneEther, this.token1, this.UniContract);
         }
         await this.printAccountBalance();
