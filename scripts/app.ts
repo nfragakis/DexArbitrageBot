@@ -24,8 +24,8 @@ dotenv.config();
         decimals: 18
     };
     let token2: TokenMetadata = {
-        name: "MKR",
-        address: "0xf9ba5210f91d0474bd1e1dcdaec4c58e359aad85",
+        name: "BAT",
+        address: "0xda5b056cfb861282b4b59d29c9b395bcc238d29b",
         decimals: 18
     };
 
