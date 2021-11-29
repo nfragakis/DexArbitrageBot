@@ -17,14 +17,11 @@ import {
 import {
     Fetcher,
     Token,
-    WETH,
-    ChainId,
     TradeType,
     Percent,
     Route,
     Trade,
-    TokenAmount,
-    BigintIsh
+    TokenAmount
 } from "@uniswap/sdk"
 
 import { TokenMetadata, TradeParams } from "./utils/types";
