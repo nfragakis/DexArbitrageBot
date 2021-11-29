@@ -3,7 +3,7 @@ Bot that monitors UniswapV2 and Sushiswap routers for  opportunities where a giv
 
 Bot identifies opportunities, then buys at a cheaper rate on 1 DEX and sells at the higer rate on the other.
 
-This repo is a proof-of-concept implementation not tested on mainnet, at your own risk.
+This repo is a proof-of-concept implementation not tested on mainnet, use at your own risk.
 
 ## Usage
 ``` bash
